@@ -1,0 +1,126 @@
+﻿<Window
+    x:Class="EVotingSystem.Views.RegisterView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:vm="clr-namespace:EVotingSystem.ViewModels"
+    Title="Registracija"
+    Background="{DynamicResource MaterialDesignPaper}"
+    FontFamily="{DynamicResource MaterialDesignFont}"
+    TextElement.FontSize="14"
+    TextElement.FontWeight="Regular"
+    TextElement.Foreground="{DynamicResource MaterialDesignBody}"
+    TextOptions.TextFormattingMode="Ideal"
+    TextOptions.TextRenderingMode="Auto"
+    WindowStartupLocation="CenterScreen"
+    WindowState="Maximized">
+
+    <Window.DataContext>
+        <vm:RegisterViewModel />
+    </Window.DataContext>
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+    </Window.Resources>
+
+    <Grid>
+        <materialDesign:Card
+            Width="500"
+            Padding="30"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            materialDesign:ElevationAssist.Elevation="Dp4"
+            UniformCornerRadius="10">
+            <StackPanel>
+                <TextBlock
+                    Margin="0,0,0,30"
+                    HorizontalAlignment="Center"
+                    FontSize="28"
+                    FontWeight="Bold"
+                    Foreground="{DynamicResource PrimaryHueMidBrush}"
+                    Text="E-Voting Registracija" />
+
+                <StackPanel
+                    Margin="0,0,0,25"
+                    HorizontalAlignment="Center"
+                    Orientation="Horizontal">
+                    <RadioButton
+                        Margin="0,0,20,0"
+                        Command="{Binding SelectVoterCommand}"
+                        Content="Glasač"
+                        IsChecked="{Binding IsVoterSelected}"
+                        Style="{StaticResource MaterialDesignTabRadioButton}" />
+                    <RadioButton
+                        Command="{Binding SelectOrganizerCommand}"
+                        Content="Organizator"
+                        IsChecked="{Binding IsOrganizerSelected}"
+                        Style="{StaticResource MaterialDesignTabRadioButton}" />
+                </StackPanel>
+
+                <TextBox
+                    Margin="0,0,0,15"
+                    materialDesign:HintAssist.Hint="Korisničko ime"
+                    FontSize="16"
+                    Style="{StaticResource MaterialDesignFloatingHintTextBox}"
+                    Text="{Binding Username}" />
+
+                <TextBox
+                    Margin="0,0,0,20"
+                    materialDesign:HintAssist.Hint="Lozinka (za nalog i sertifikat)"
+                    FontSize="16"
+                    Style="{StaticResource MaterialDesignFloatingHintTextBox}"
+                    Text="{Binding Password}" />
+
+                <StackPanel Visibility="{Binding IsVoterSelected, Converter={StaticResource BoolToVis}}">
+                    <TextBox
+                        Margin="0,0,0,15"
+                        materialDesign:HintAssist.Hint="Ime"
+                        FontSize="16"
+                        Style="{StaticResource MaterialDesignFloatingHintTextBox}"
+                        Text="{Binding FirstName}" />
+                    <TextBox
+                        Margin="0,0,0,15"
+                        materialDesign:HintAssist.Hint="Prezime"
+                        FontSize="16"
+                        Style="{StaticResource MaterialDesignFloatingHintTextBox}"
+                        Text="{Binding LastName}" />
+                    <TextBox
+                        Margin="0,0,0,20"
+                        materialDesign:HintAssist.Hint="JMBG"
+                        FontSize="16"
+                        Style="{StaticResource MaterialDesignFloatingHintTextBox}"
+                        Text="{Binding Jmbg}" />
+                </StackPanel>
+
+                <StackPanel Visibility="{Binding IsOrganizerSelected, Converter={StaticResource BoolToVis}}">
+                    <TextBox
+                        Margin="0,0,0,15"
+                        materialDesign:HintAssist.Hint="Naziv Organizacije"
+                        FontSize="16"
+                        Style="{StaticResource MaterialDesignFloatingHintTextBox}"
+                        Text="{Binding OrganizationName}" />
+                    <TextBox
+                        Margin="0,0,0,20"
+                        materialDesign:HintAssist.Hint="ID Broj Organizacije"
+                        FontSize="16"
+                        Style="{StaticResource MaterialDesignFloatingHintTextBox}"
+                        Text="{Binding OrgIdNumber}" />
+                </StackPanel>
+
+                <Button
+                    Height="45"
+                    Margin="0,20,0,0"
+                    Command="{Binding RegisterCommand}"
+                    Content="REGISTRUJ SE"
+                    FontSize="16"
+                    Style="{StaticResource MaterialDesignRaisedButton}" />
+
+                <Button
+                    Margin="0,15,0,0"
+                    Command="{Binding GoToLoginCommand}"
+                    Content="Već imate nalog? Prijavite se"
+                    Style="{StaticResource MaterialDesignFlatButton}" />
+            </StackPanel>
+        </materialDesign:Card>
+    </Grid>
+</Window>
