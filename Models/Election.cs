@@ -37,5 +37,6 @@
         }
         public string Name { get; set; } = string.Empty;
         public int VoteCount { get; set; } = 0;
+        public bool IsSelected { get; set; } = false;
     }
 }

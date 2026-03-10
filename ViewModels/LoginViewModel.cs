@@ -7,6 +7,7 @@ using Microsoft.Win32;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using Org.BouncyCastle.Pkcs;
 
 namespace EVotingSystem.ViewModels
 {
@@ -62,6 +63,17 @@ namespace EVotingSystem.ViewModels
             if (isValid)
             {
                 _loadedCertSerialNumber = serialNumber;
+                var builder = new Pkcs12StoreBuilder();
+                var store = builder.Build();
+                using (var stream = new System.IO.FileStream(SelectedCertificatePath, System.IO.FileMode.Open, System.IO.FileAccess.Read))
+                {
+                    store.Load(stream, certPassword.ToCharArray());
+                }
+                string alias = "";
+                foreach (string a in store.Aliases)
+                    if (store.IsKeyEntry(a))
+                        alias = a;
+                AppSession.CurrentUserPrivateKey = store.GetKey(alias).Key;
                 MessageBox.Show("Sertifikat uspješno validiran!\nMožete preći na Korak 2 (Kredencijali).", "Korak 1 Uspješan", MessageBoxButton.OK, MessageBoxImage.Information);
                 IsStepOneVisible = false; 
                 IsStepTwoVisible = true;
@@ -128,7 +140,7 @@ namespace EVotingSystem.ViewModels
 
             user.FailedLoginAttempts = 0;
             _dbContext.UpdateUser(user);
-
+            AppSession.CurrentUser = user;
             MessageBox.Show($"Uspješna prijava!\nDobrodošli, {user.FirstName} {user.LastName} ({user.Role}).", "Prijava uspješna", MessageBoxButton.OK, MessageBoxImage.Information);
 
             if (user.Role == UserRole.Organizer)

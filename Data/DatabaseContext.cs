@@ -232,5 +232,93 @@ namespace EVotingSystem.Data
             }
             return elections;
         }
+
+        public List<Election> GetActiveElections()
+        {
+            var elections = new List<Election>();
+            using (var conn = GetConnection())
+            {
+                conn.Open();
+                string sql = "SELECT * FROM Elections";
+                using (var cmd = new SQLiteCommand(sql, conn))
+                {
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            var election = new Election
+                            {
+                                Id = Convert.ToInt32(reader["Id"]),
+                                Title = reader["Title"].ToString() ?? "",
+                                Description = reader["Description"].ToString() ?? "",
+                                StartDate = DateTime.Parse(reader["StartDate"].ToString()),
+                                EndDate = DateTime.Parse(reader["EndDate"].ToString()),
+                                OrganizerId = Convert.ToInt32(reader["OrganizerId"])
+                            };
+
+                            string candidatesJson = reader["CandidatesJson"].ToString();
+                            if (!string.IsNullOrEmpty(candidatesJson))
+                                election.Candidates = JsonConvert.DeserializeObject<List<Candidate>>(candidatesJson);
+
+                            if (election.IsActive)
+                            {
+                                elections.Add(election);
+                            }
+                        }
+                    }
+                }
+            }
+            return elections;
+        }
+
+        public bool HasUserVoted(int electionId, int voterId)
+        {
+            using (var conn = GetConnection())
+            {
+                conn.Open();
+                string sql = "SELECT COUNT(*) FROM Votes WHERE ElectionId = @eId AND VoterId = @vId";
+                using (var cmd = new SQLiteCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@eId", electionId);
+                    cmd.Parameters.AddWithValue("@vId", voterId);
+                    return (long)cmd.ExecuteScalar() > 0;
+                }
+            }
+        }
+
+        public void AddVote(Vote vote)
+        {
+            using (var conn = GetConnection())
+            {
+                conn.Open();
+                string sql = @"
+                    INSERT INTO Votes (ElectionId, VoterId, EncryptedData, EncryptedSessionKey, DigitalSignature, Timestamp)
+                    VALUES (@eId, @vId, @encData, @encKey, @sig, @time)";
+                using (var cmd = new SQLiteCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@eId", vote.ElectionId);
+                    cmd.Parameters.AddWithValue("@vId", vote.VoterId);
+                    cmd.Parameters.AddWithValue("@encData", vote.EncryptedData);
+                    cmd.Parameters.AddWithValue("@encKey", vote.EncryptedSessionKey);
+                    cmd.Parameters.AddWithValue("@sig", vote.DigitalSignature);
+                    cmd.Parameters.AddWithValue("@time", vote.Timestamp.ToString("o"));
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+        public string GetUserCertificateSerialNumber(int userId)
+        {
+            using (var conn = GetConnection())
+            {
+                conn.Open();
+                string sql = "SELECT CertificateSerialNumber FROM Users WHERE Id = @id";
+                using (var cmd = new SQLiteCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@id", userId);
+                    return cmd.ExecuteScalar()?.ToString();
+                }
+            }
+        }
     }
 }

@@ -5,19 +5,108 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:util="clr-namespace:EVotingSystem.Utilities"
     Title="Glasač Dashboard"
-    Width="800"
-    Height="600"
+    Width="900"
+    Height="700"
     Background="{DynamicResource MaterialDesignPaper}"
     FontFamily="{DynamicResource MaterialDesignFont}"
     TextElement.Foreground="{DynamicResource MaterialDesignBody}"
     WindowStartupLocation="CenterScreen"
     mc:Ignorable="d">
+    <Window.Resources>
+        <util:DummyConverter x:Key="DummyConverter" />
+    </Window.Resources>
     <Grid>
-        <TextBlock
-            HorizontalAlignment="Center"
-            VerticalAlignment="Center"
-            FontSize="18"
-            Text="Lista aktivnih glasanja će biti ovdje." />
+        <ScrollViewer Padding="20" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock
+                    Margin="20,10,20,20"
+                    FontSize="28"
+                    FontWeight="Bold"
+                    Text="Aktivna glasanja" />
+
+                <ItemsControl ItemsSource="{Binding ActiveElections}">
+                    <ItemsControl.Style>
+                        <Style TargetType="ItemsControl">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ActiveElections.Count}" Value="0">
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate>
+                                                <TextBlock
+                                                    Margin="0,50,0,0"
+                                                    HorizontalAlignment="Center"
+                                                    FontSize="18"
+                                                    Foreground="Gray"
+                                                    Text="Trenutno nema aktivnih glasanja na kojima niste glasali." />
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ItemsControl.Style>
+
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <materialDesign:Card
+                                Margin="10,0,10,20"
+                                Padding="25"
+                                materialDesign:ElevationAssist.Elevation="Dp2"
+                                UniformCornerRadius="8">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <!--  Naslov i Opis  -->
+                                    <StackPanel Grid.Row="0" Margin="0,0,0,20">
+                                        <TextBlock
+                                            FontSize="22"
+                                            FontWeight="Bold"
+                                            Foreground="{DynamicResource PrimaryHueMidBrush}"
+                                            Text="{Binding Title}" />
+                                        <TextBlock
+                                            Margin="0,10,0,0"
+                                            FontSize="14"
+                                            Text="{Binding Description}"
+                                            TextWrapping="Wrap" />
+                                    </StackPanel>
+
+                                    <!--  Opcije za glasanje  -->
+                                    <ItemsControl
+                                        Grid.Row="1"
+                                        Margin="0,0,0,20"
+                                        ItemsSource="{Binding Candidates}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <RadioButton
+                                                    Margin="0,5,0,5"
+                                                    Content="{Binding Name}"
+                                                    FontSize="16"
+                                                    GroupName="{Binding DataContext.Id, RelativeSource={RelativeSource AncestorType=materialDesign:Card}}"
+                                                    IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <Button
+                                        Grid.Row="2"
+                                        Width="200"
+                                        Height="40"
+                                        HorizontalAlignment="Right"
+                                        Command="{Binding DataContext.VoteCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}"
+                                        Content="GLASAJ" />
+                                </Grid>
+                            </materialDesign:Card>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
     </Grid>
 </Window>
