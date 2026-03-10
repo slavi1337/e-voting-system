@@ -131,6 +131,25 @@ namespace EVotingSystem.ViewModels
 
             MessageBox.Show($"Uspješna prijava!\nDobrodošli, {user.FirstName} {user.LastName} ({user.Role}).", "Prijava uspješna", MessageBoxButton.OK, MessageBoxImage.Information);
 
+            if (user.Role == UserRole.Organizer)
+            {
+                var dashboard = new Views.Organizer.OrganizerDashboardView(user);
+                dashboard.Show();
+            }
+            else 
+            {
+                var dashboard = new Views.Voter.VoterDashboardView(user);
+                dashboard.Show();
+            }
+
+            foreach (Window window in Application.Current.Windows)
+            {
+                if (window.DataContext == this)
+                {
+                    window.Close();
+                    break;
+                }
+            }
         }
         [RelayCommand]
         public void GoToRegister()

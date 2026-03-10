@@ -19,8 +19,12 @@
   <ItemGroup>
     <Folder Include="Utilities\" />
     <Folder Include="Stores\" />
-    <Folder Include="Views\Voter\" />
-    <Folder Include="Views\Organizer\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="ViewModels\Voter\VoterDashboardViewModel.cs">
+      <Generator>MSBuild:Compile</Generator>
+    </Compile>
   </ItemGroup>
 
 </Project>
