@@ -1,6 +1,7 @@
 ﻿using System.Data.SQLite;
 using System.IO;
 using EVotingSystem.Models;
+using Newtonsoft.Json;
 
 namespace EVotingSystem.Data
 {
@@ -167,6 +168,69 @@ namespace EVotingSystem.Data
                     cmd.ExecuteNonQuery();
                 }
             }
+        }
+
+        public void AddElection(Election election)
+        {
+            using (var conn = GetConnection())
+            {
+                conn.Open();
+                string sql = @"
+                    INSERT INTO Elections (Title, Description, StartDate, EndDate, OrganizerId, CandidatesJson)
+                    VALUES (@title, @desc, @start, @end, @orgId, @candidates)";
+
+                using (var cmd = new SQLiteCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@title", election.Title);
+                    cmd.Parameters.AddWithValue("@desc", election.Description);
+                    cmd.Parameters.AddWithValue("@start", election.StartDate.ToString("o"));
+                    cmd.Parameters.AddWithValue("@end", election.EndDate.ToString("o"));
+                    cmd.Parameters.AddWithValue("@orgId", election.OrganizerId);
+
+                    string candidatesJson = JsonConvert.SerializeObject(election.Candidates);
+                    cmd.Parameters.AddWithValue("@candidates", candidatesJson);
+
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+        public List<Election> GetElectionsByOrganizer(int organizerId)
+        {
+            var elections = new List<Election>();
+            using (var conn = GetConnection())
+            {
+                conn.Open();
+                string sql = "SELECT * FROM Elections WHERE OrganizerId = @orgId ORDER BY Id DESC";
+                using (var cmd = new SQLiteCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@orgId", organizerId);
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            var election = new Election
+                            {
+                                Id = Convert.ToInt32(reader["Id"]),
+                                Title = reader["Title"].ToString() ?? "",
+                                Description = reader["Description"].ToString() ?? "",
+                                StartDate = DateTime.Parse(reader["StartDate"].ToString()),
+                                EndDate = DateTime.Parse(reader["EndDate"].ToString()),
+                                OrganizerId = Convert.ToInt32(reader["OrganizerId"])
+                            };
+
+                            string candidatesJson = reader["CandidatesJson"].ToString();
+                            if (!string.IsNullOrEmpty(candidatesJson))
+                            {
+                                election.Candidates = JsonConvert.DeserializeObject<List<Candidate>>(candidatesJson);
+                            }
+
+                            elections.Add(election);
+                        }
+                    }
+                }
+            }
+            return elections;
         }
     }
 }
