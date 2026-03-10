@@ -4,12 +4,12 @@ namespace EVotingSystem.Models
 {
     public static class AppSession
     {
-        public static User CurrentUser
+        public static User? CurrentUser
         {
             get; set;
         }
 
-        public static AsymmetricKeyParameter CurrentUserPrivateKey
+        public static AsymmetricKeyParameter? CurrentUserPrivateKey
         {
             get; set;
         }

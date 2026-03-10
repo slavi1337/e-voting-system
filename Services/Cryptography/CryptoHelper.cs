@@ -1,12 +1,11 @@
-﻿using System;
-using System.Security.Cryptography;
-using System.Text;
-using Org.BouncyCastle.Crypto;
+﻿using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Modes;
 using Org.BouncyCastle.Crypto.Paddings;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Security;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace EVotingSystem.Services.Cryptography
 {
@@ -74,6 +73,57 @@ namespace EVotingSystem.Services.Cryptography
             byte[] signature = signer.GenerateSignature();
 
             return Convert.ToBase64String(signature);
+        }
+
+        public static byte[] DecryptAesKeyWithRsa(string encryptedSessionKey, AsymmetricKeyParameter organizerPrivateKey)
+        {
+            var engine = new Org.BouncyCastle.Crypto.Encodings.Pkcs1Encoding(new RsaEngine());
+            engine.Init(false, organizerPrivateKey);
+            byte[] keyBytes = Convert.FromBase64String(encryptedSessionKey);
+            return engine.ProcessBlock(keyBytes, 0, keyBytes.Length);
+        }
+
+        public static string DecryptVoteDataWithAes(string encryptedData, byte[] aesKey)
+        {
+            byte[] fullData = Convert.FromBase64String(encryptedData);
+            byte[] iv = new byte[16];
+            byte[] cipherText = new byte[fullData.Length - 16];
+
+            Array.Copy(fullData, 0, iv, 0, 16);
+            Array.Copy(fullData, 16, cipherText, 0, cipherText.Length);
+
+            var engine = new AesEngine();
+            var blockCipher = new CbcBlockCipher(engine);
+            var cipher = new PaddedBufferedBlockCipher(blockCipher, new Pkcs7Padding());
+
+            cipher.Init(false, new ParametersWithIV(new KeyParameter(aesKey), iv));
+            byte[] outputBytes = new byte[cipher.GetOutputSize(cipherText.Length)];
+
+            int length = cipher.ProcessBytes(cipherText, 0, cipherText.Length, outputBytes, 0);
+            cipher.DoFinal(outputBytes, length);
+
+            return Encoding.UTF8.GetString(outputBytes).TrimEnd('\0');
+        }
+
+        public static string SignReport(string reportData, AsymmetricKeyParameter orgPrivateKey)
+        {
+            byte[] dataBytes = Encoding.UTF8.GetBytes(reportData);
+            ISigner signer = SignerUtilities.GetSigner("SHA-256withRSA");
+            signer.Init(true, orgPrivateKey);
+            signer.BlockUpdate(dataBytes, 0, dataBytes.Length);
+            byte[] signature = signer.GenerateSignature();
+            return Convert.ToBase64String(signature);
+        }
+
+        private static readonly byte[] ServerHmacKey = Encoding.UTF8.GetBytes("TajniKljucAplikacijeZaEVoting123!");
+
+        public static string CalculateHmac(string data)
+        {
+            using (var hmac = new HMACSHA256(ServerHmacKey))
+            {
+                byte[] hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
+                return Convert.ToBase64String(hash);
+            }
         }
     }
 }

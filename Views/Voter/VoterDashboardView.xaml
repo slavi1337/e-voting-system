@@ -7,12 +7,11 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:util="clr-namespace:EVotingSystem.Utilities"
     Title="Glasač Dashboard"
-    Width="900"
-    Height="700"
     Background="{DynamicResource MaterialDesignPaper}"
     FontFamily="{DynamicResource MaterialDesignFont}"
     TextElement.Foreground="{DynamicResource MaterialDesignBody}"
     WindowStartupLocation="CenterScreen"
+    WindowState="Maximized"
     mc:Ignorable="d">
     <Window.Resources>
         <util:DummyConverter x:Key="DummyConverter" />
@@ -20,6 +19,43 @@
     <Grid>
         <ScrollViewer Padding="20" VerticalScrollBarVisibility="Auto">
             <StackPanel>
+                <!--  SEKCIJA ZA VERIFIKACIJU GLASA  -->
+                <materialDesign:Card
+                    Margin="20,10,20,20"
+                    Padding="15"
+                    Background="#E8F5E9"
+                    UniformCornerRadius="8">
+                    <StackPanel>
+                        <TextBlock
+                            Margin="0,0,0,10"
+                            FontSize="16"
+                            FontWeight="Bold"
+                            Foreground="#2E7D32"
+                            Text="Verifikacija upisanog glasa" />
+                        <TextBlock
+                            Margin="0,0,0,10"
+                            FontSize="12"
+                            Text="Unesite kod (Receipt) koji ste dobili prilikom glasanja da biste provjerili da li je vaš glas sigurno u bazi."
+                            TextWrapping="Wrap" />
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox
+                                Width="350"
+                                Margin="0,0,15,0"
+                                materialDesign:HintAssist.Hint="Unesite vaš kod za verifikaciju ovdje..."
+                                Style="{StaticResource MaterialDesignFloatingHintTextBox}"
+                                Text="{Binding ReceiptInput}" />
+                            <Button
+                                BorderBrush="#2E7D32"
+                                Command="{Binding VerifyMyVoteCommand}"
+                                Content="VERIFIKUJ"
+                                Foreground="#2E7D32"
+                                Style="{StaticResource MaterialDesignOutlinedButton}" />
+                        </StackPanel>
+                    </StackPanel>
+                </materialDesign:Card>
+
+                <Separator Margin="20,0,20,10" />
                 <TextBlock
                     Margin="20,10,20,20"
                     FontSize="28"
@@ -74,6 +110,18 @@
                                             FontSize="14"
                                             Text="{Binding Description}"
                                             TextWrapping="Wrap" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <materialDesign:PackIcon
+                                                Margin="0,0,5,0"
+                                                VerticalAlignment="Center"
+                                                Foreground="#E53935"
+                                                Kind="TimerSand" />
+                                            <TextBlock
+                                                FontSize="13"
+                                                FontWeight="Bold"
+                                                Foreground="#E53935"
+                                                Text="{Binding EndDate, StringFormat='Glasanje se zatvara: {0:dd.MM.yyyy u HH:mm}'}" />
+                                        </StackPanel>
                                     </StackPanel>
 
                                     <!--  Opcije za glasanje  -->

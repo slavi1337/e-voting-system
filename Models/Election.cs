@@ -27,6 +27,8 @@
         {
             get; set;
         }
+
+        public string Hmac { get; set; } = string.Empty;
     }
 
     public class Candidate

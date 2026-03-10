@@ -1,7 +1,8 @@
-﻿using System.Data.SQLite;
-using System.IO;
-using EVotingSystem.Models;
+﻿using EVotingSystem.Models;
+using EVotingSystem.Services.Cryptography;
 using Newtonsoft.Json;
+using System.Data.SQLite;
+using System.IO;
 
 namespace EVotingSystem.Data
 {
@@ -49,7 +50,8 @@ namespace EVotingSystem.Data
                             StartDate TEXT,
                             EndDate TEXT,
                             OrganizerId INTEGER,
-                            CandidatesJson TEXT
+                            CandidatesJson TEXT,
+                            Hmac TEXT
                         );
 
                         CREATE TABLE Votes (
@@ -176,19 +178,25 @@ namespace EVotingSystem.Data
             {
                 conn.Open();
                 string sql = @"
-                    INSERT INTO Elections (Title, Description, StartDate, EndDate, OrganizerId, CandidatesJson)
-                    VALUES (@title, @desc, @start, @end, @orgId, @candidates)";
+                    INSERT INTO Elections (Title, Description, StartDate, EndDate, OrganizerId, CandidatesJson, Hmac)
+                    VALUES (@title, @desc, @start, @end, @orgId, @candidates, @hmac)";
 
                 using (var cmd = new SQLiteCommand(sql, conn))
                 {
+                    string candidatesJson = JsonConvert.SerializeObject(election.Candidates);
+                    string startDateStr = election.StartDate.ToString("o");
+                    string endDateStr = election.EndDate.ToString("o");
+
+                    string metadata = $"{election.Title}{election.Description}{startDateStr}{endDateStr}{election.OrganizerId}{candidatesJson}";
+                    string hmacValue = CryptoHelper.CalculateHmac(metadata);
+
                     cmd.Parameters.AddWithValue("@title", election.Title);
                     cmd.Parameters.AddWithValue("@desc", election.Description);
-                    cmd.Parameters.AddWithValue("@start", election.StartDate.ToString("o"));
-                    cmd.Parameters.AddWithValue("@end", election.EndDate.ToString("o"));
+                    cmd.Parameters.AddWithValue("@start", startDateStr);
+                    cmd.Parameters.AddWithValue("@end", endDateStr);
                     cmd.Parameters.AddWithValue("@orgId", election.OrganizerId);
-
-                    string candidatesJson = JsonConvert.SerializeObject(election.Candidates);
                     cmd.Parameters.AddWithValue("@candidates", candidatesJson);
+                    cmd.Parameters.AddWithValue("@hmac", hmacValue);
 
                     cmd.ExecuteNonQuery();
                 }
@@ -223,6 +231,15 @@ namespace EVotingSystem.Data
                             if (!string.IsNullOrEmpty(candidatesJson))
                             {
                                 election.Candidates = JsonConvert.DeserializeObject<List<Candidate>>(candidatesJson);
+                            }
+
+                            string dbHmac = reader["Hmac"].ToString() ?? "";
+                            string currentMetadata = $"{election.Title}{election.Description}{election.StartDate:o}{election.EndDate:o}{election.OrganizerId}{candidatesJson}";
+                            string calculatedHmac = CryptoHelper.CalculateHmac(currentMetadata);
+
+                            if (dbHmac != calculatedHmac)
+                            {
+                                election.Title = "[UPOZORENJE: Integritet narušen!] " + election.Title;
                             }
 
                             elections.Add(election);
@@ -260,6 +277,14 @@ namespace EVotingSystem.Data
                             if (!string.IsNullOrEmpty(candidatesJson))
                                 election.Candidates = JsonConvert.DeserializeObject<List<Candidate>>(candidatesJson);
 
+                            string dbHmac = reader["Hmac"].ToString() ?? "";
+                            string currentMetadata = $"{election.Title}{election.Description}{election.StartDate:o}{election.EndDate:o}{election.OrganizerId}{candidatesJson}";
+                            string calculatedHmac = CryptoHelper.CalculateHmac(currentMetadata);
+
+                            if (dbHmac != calculatedHmac)
+                            {
+                                election.Title = "[UPOZORENJE: Integritet narušen!] " + election.Title;
+                            }
                             if (election.IsActive)
                             {
                                 elections.Add(election);
@@ -319,6 +344,63 @@ namespace EVotingSystem.Data
                     return cmd.ExecuteScalar()?.ToString();
                 }
             }
+        }
+
+        public List<Vote> GetVotesForElection(int electionId)
+        {
+            var votes = new List<Vote>();
+            using (var conn = GetConnection())
+            {
+                conn.Open();
+                string sql = "SELECT * FROM Votes WHERE ElectionId = @eId";
+                using (var cmd = new SQLiteCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@eId", electionId);
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            votes.Add(new Vote
+                            {
+                                Id = Convert.ToInt32(reader["Id"]),
+                                ElectionId = Convert.ToInt32(reader["ElectionId"]),
+                                VoterId = Convert.ToInt32(reader["VoterId"]),
+                                EncryptedData = reader["EncryptedData"].ToString() ?? "",
+                                EncryptedSessionKey = reader["EncryptedSessionKey"].ToString() ?? "",
+                                DigitalSignature = reader["DigitalSignature"].ToString() ?? "",
+                                Timestamp = DateTime.Parse(reader["Timestamp"].ToString() ?? DateTime.UtcNow.ToString())
+                            });
+                        }
+                    }
+                }
+            }
+            return votes;
+        }
+
+        public string VerifyVote(string receiptSignature)
+        {
+            using (var conn = GetConnection())
+            {
+                conn.Open();
+                string sql = @"
+                    SELECT e.Title, v.Timestamp 
+                    FROM Votes v 
+                    JOIN Elections e ON v.ElectionId = e.Id 
+                    WHERE v.DigitalSignature LIKE @sig";
+
+                using (var cmd = new SQLiteCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@sig", receiptSignature + "%");
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            return $"Pronađeno!\nVaš glas za glasanje '{reader["Title"]}' je bezbjedno zabilježen u bazi dana {reader["Timestamp"]}.\nSadržaj glasa je kriptografski zaštićen.";
+                        }
+                    }
+                }
+            }
+            return null;
         }
     }
 }

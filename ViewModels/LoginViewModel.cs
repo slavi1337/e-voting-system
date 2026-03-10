@@ -4,10 +4,10 @@ using EVotingSystem.Data;
 using EVotingSystem.Models;
 using EVotingSystem.Services.Cryptography;
 using Microsoft.Win32;
+using Org.BouncyCastle.Pkcs;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using Org.BouncyCastle.Pkcs;
 
 namespace EVotingSystem.ViewModels
 {
@@ -75,7 +75,7 @@ namespace EVotingSystem.ViewModels
                         alias = a;
                 AppSession.CurrentUserPrivateKey = store.GetKey(alias).Key;
                 MessageBox.Show("Sertifikat uspješno validiran!\nMožete preći na Korak 2 (Kredencijali).", "Korak 1 Uspješan", MessageBoxButton.OK, MessageBoxImage.Information);
-                IsStepOneVisible = false; 
+                IsStepOneVisible = false;
                 IsStepTwoVisible = true;
             }
             else
@@ -124,7 +124,7 @@ namespace EVotingSystem.ViewModels
 
                 if (user.FailedLoginAttempts >= 3)
                 {
-                    user.IsRevoked = true; 
+                    user.IsRevoked = true;
                     _pkiService.RevokeCertificate(user.CertificateSerialNumber, user.Role == UserRole.Organizer);
                     _dbContext.UpdateUser(user);
 
@@ -148,7 +148,7 @@ namespace EVotingSystem.ViewModels
                 var dashboard = new Views.Organizer.OrganizerDashboardView(user);
                 dashboard.Show();
             }
-            else 
+            else
             {
                 var dashboard = new Views.Voter.VoterDashboardView(user);
                 dashboard.Show();

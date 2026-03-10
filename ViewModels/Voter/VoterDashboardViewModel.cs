@@ -3,12 +3,11 @@ using CommunityToolkit.Mvvm.Input;
 using EVotingSystem.Data;
 using EVotingSystem.Models;
 using EVotingSystem.Services.Cryptography;
-using System.Collections.ObjectModel;
-using System.IO;
-using System.Linq;
-using System.Windows;
 using Org.BouncyCastle.OpenSsl;
 using Org.BouncyCastle.X509;
+using System.Collections.ObjectModel;
+using System.IO;
+using System.Windows;
 
 namespace EVotingSystem.ViewModels.Voter
 {
@@ -22,6 +21,9 @@ namespace EVotingSystem.ViewModels.Voter
 
         [ObservableProperty]
         private ObservableCollection<Election> activeElections;
+
+        [ObservableProperty]
+        private string receiptInput = string.Empty;
 
         public VoterDashboardViewModel(User user)
         {
@@ -90,13 +92,42 @@ namespace EVotingSystem.ViewModels.Voter
 
                 _dbContext.AddVote(vote);
 
-                MessageBox.Show("Vaš glas je uspješno zabilježen, enkriptovan i digitalno potpisan!", "Glasanje Uspješno", MessageBoxButton.OK, MessageBoxImage.Information);
+                string receipt = signature.Length > 40 ? signature.Substring(0, 40) : signature;
+
+                MessageBox.Show(
+                    $"Vaš glas je uspješno zabilježen, enkriptovan i digitalno potpisan!\n\n" +
+                    $"Vaš jedinstveni kod za verifikaciju (Receipt) je:\n\n{receipt}\n\n" +
+                    $"Obavezno kopirajte i sačuvajte ovaj kod! Pomoću njega možete potvrditi da je vaš glas u bazi, bez otkrivanja za koga ste glasali.",
+                    "Glasanje Uspješno",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
 
                 LoadActiveElections();
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Došlo je do greške prilikom glasanja: {ex.Message}", "Kritična Greška", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        [RelayCommand]
+        private void VerifyMyVote()
+        {
+            if (string.IsNullOrWhiteSpace(ReceiptInput))
+            {
+                MessageBox.Show("Unesite kod (Receipt) koji ste dobili nakon glasanja.", "Upozorenje", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string verificationResult = _dbContext.VerifyVote(ReceiptInput);
+
+            if (verificationResult != null)
+            {
+                MessageBox.Show(verificationResult, "Uspješna verifikacija", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                MessageBox.Show("Glas sa tim kodom nije pronađen u bazi podataka.", "Nepoznat kod", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
     }

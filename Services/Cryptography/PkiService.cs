@@ -1,6 +1,4 @@
-﻿using System;
-using System.IO;
-using Org.BouncyCastle.Asn1.X509;
+﻿using Org.BouncyCastle.Asn1.X509;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Generators;
 using Org.BouncyCastle.Crypto.Operators;
@@ -9,9 +7,9 @@ using Org.BouncyCastle.Math;
 using Org.BouncyCastle.OpenSsl;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
-using Org.BouncyCastle.Utilities;
 using Org.BouncyCastle.X509;
 using Org.BouncyCastle.X509.Extension;
+using System.IO;
 
 namespace EVotingSystem.Services.Cryptography
 {
@@ -227,7 +225,7 @@ namespace EVotingSystem.Services.Cryptography
 
             return p12Path;
         }
-        
+
         private X509Certificate ReadCertificate(string path)
         {
             using (var reader = File.OpenText(path))
@@ -263,7 +261,7 @@ namespace EVotingSystem.Services.Cryptography
 
                 using (var stream = new FileStream(p12Path, FileMode.Open, FileAccess.Read))
                 {
-                    store.Load(stream, password.ToCharArray()); 
+                    store.Load(stream, password.ToCharArray());
                 }
 
                 string alias = null;
@@ -303,7 +301,7 @@ namespace EVotingSystem.Services.Cryptography
                 serialNumberHex = cert.SerialNumber.ToString(16);
                 return true;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 errorMessage = "Neispravna lozinka ili oštećen .p12 fajl.";
                 return false;

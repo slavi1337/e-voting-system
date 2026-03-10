@@ -6,12 +6,11 @@
     xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     Title="Organizator Dashboard"
-    Width="900"
-    Height="700"
     Background="{DynamicResource MaterialDesignPaper}"
     FontFamily="{DynamicResource MaterialDesignFont}"
     TextElement.Foreground="{DynamicResource MaterialDesignBody}"
     WindowStartupLocation="CenterScreen"
+    WindowState="Maximized"
     mc:Ignorable="d">
 
     <Grid>
@@ -43,19 +42,41 @@
                                 TextWrapping="Wrap"
                                 VerticalScrollBarVisibility="Auto" />
 
-                            <StackPanel Margin="0,0,0,20" Orientation="Horizontal">
-                                <DatePicker
-                                    Width="250"
-                                    Margin="0,0,20,0"
-                                    materialDesign:HintAssist.Hint="Datum početka"
-                                    SelectedDate="{Binding StartDate}"
-                                    Style="{StaticResource MaterialDesignFloatingHintDatePicker}" />
+                            <!--  Datumi i Vremena  -->
+                            <StackPanel Margin="0,0,0,20" Orientation="Vertical">
+                                <!--  Početak  -->
+                                <StackPanel Margin="0,0,0,15" Orientation="Horizontal">
+                                    <DatePicker
+                                        Width="160"
+                                        Margin="0,0,20,0"
+                                        materialDesign:HintAssist.Hint="Datum početka"
+                                        SelectedDate="{Binding StartDate}"
+                                        Style="{StaticResource MaterialDesignFloatingHintDatePicker}" />
 
-                                <DatePicker
-                                    Width="250"
-                                    materialDesign:HintAssist.Hint="Datum završetka"
-                                    SelectedDate="{Binding EndDate}"
-                                    Style="{StaticResource MaterialDesignFloatingHintDatePicker}" />
+                                    <materialDesign:TimePicker
+                                        Width="120"
+                                        materialDesign:HintAssist.Hint="Vrijeme početka"
+                                        Is24Hours="True"
+                                        SelectedTime="{Binding StartTime}"
+                                        Style="{StaticResource MaterialDesignFloatingHintTimePicker}" />
+                                </StackPanel>
+
+                                <!--  Kraj  -->
+                                <StackPanel Orientation="Horizontal">
+                                    <DatePicker
+                                        Width="160"
+                                        Margin="0,0,20,0"
+                                        materialDesign:HintAssist.Hint="Datum završetka"
+                                        SelectedDate="{Binding EndDate}"
+                                        Style="{StaticResource MaterialDesignFloatingHintDatePicker}" />
+
+                                    <materialDesign:TimePicker
+                                        Width="120"
+                                        materialDesign:HintAssist.Hint="Vrijeme završetka"
+                                        Is24Hours="True"
+                                        SelectedTime="{Binding EndTime}"
+                                        Style="{StaticResource MaterialDesignFloatingHintTimePicker}" />
+                                </StackPanel>
                             </StackPanel>
 
                             <TextBox
@@ -137,14 +158,14 @@
                                                     <TextBlock
                                                         Margin="0,0,20,0"
                                                         FontWeight="SemiBold"
-                                                        Text="{Binding StartDate, StringFormat='Početak: {0:dd.MM.yyyy}'}" />
+                                                        Text="{Binding StartDate, StringFormat='Početak: {0:dd.MM.yyyy u HH:mm}'}" />
 
                                                     <materialDesign:PackIcon
                                                         Margin="0,0,5,0"
                                                         VerticalAlignment="Center"
                                                         Foreground="Gray"
                                                         Kind="CalendarCheck" />
-                                                    <TextBlock FontWeight="SemiBold" Text="{Binding EndDate, StringFormat='Kraj: {0:dd.MM.yyyy}'}" />
+                                                    <TextBlock FontWeight="SemiBold" Text="{Binding EndDate, StringFormat='Kraj: {0:dd.MM.yyyy u HH:mm}'}" />
                                                 </StackPanel>
                                             </StackPanel>
 

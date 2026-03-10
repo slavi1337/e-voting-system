@@ -2,11 +2,12 @@
 using CommunityToolkit.Mvvm.Input;
 using EVotingSystem.Data;
 using EVotingSystem.Models;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Windows;
+using EVotingSystem.Services.Cryptography;
+using Org.BouncyCastle.Crypto;
+using Org.BouncyCastle.OpenSsl;
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Windows;
 
 namespace EVotingSystem.ViewModels.Organizer
 {
@@ -20,7 +21,9 @@ namespace EVotingSystem.ViewModels.Organizer
         [ObservableProperty] private string electionTitle = string.Empty;
         [ObservableProperty] private string electionDescription = string.Empty;
         [ObservableProperty] private DateTime startDate = DateTime.Today;
+        [ObservableProperty] private DateTime startTime = DateTime.Now;
         [ObservableProperty] private DateTime endDate = DateTime.Today.AddDays(7);
+        [ObservableProperty] private DateTime endTime = DateTime.Now;
         [ObservableProperty] private string candidatesInput = string.Empty;
         [ObservableProperty] private ObservableCollection<Election> myElections = new ObservableCollection<Election>();
 
@@ -40,9 +43,12 @@ namespace EVotingSystem.ViewModels.Organizer
                 return;
             }
 
-            if (EndDate <= StartDate)
+            DateTime fullStart = StartDate.Date.Add(StartTime.TimeOfDay);
+            DateTime fullEnd = EndDate.Date.Add(EndTime.TimeOfDay);
+
+            if (fullEnd <= fullStart)
             {
-                MessageBox.Show("Datum završetka mora biti nakon datuma početka.", "Greška", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Vrijeme završetka mora biti nakon vremena početka.", "Greška", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -61,8 +67,8 @@ namespace EVotingSystem.ViewModels.Organizer
             {
                 Title = ElectionTitle,
                 Description = ElectionDescription,
-                StartDate = StartDate,
-                EndDate = EndDate,
+                StartDate = fullStart,
+                EndDate = fullEnd,
                 OrganizerId = CurrentUser.Id,
                 Candidates = candidateNames.Select((name, index) => new Candidate { Id = index + 1, Name = name }).ToList()
             };
@@ -94,20 +100,58 @@ namespace EVotingSystem.ViewModels.Organizer
                 MyElections.Add(el);
             }
         }
-
         [RelayCommand]
         private void CountVotes(Election election)
         {
             if (election == null)
                 return;
 
-            if (!election.IsFinished)
+            try
             {
-                MessageBox.Show("Ne možete pokrenuti brojanje glasova dok se glasanje zvanično ne završi!", "Upozorenje", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
+                var orgKeyPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PKI_ROOT", "OrgCA", "org.key");
+                var pemReader = new PemReader(File.OpenText(orgKeyPath));
+                var keyPair = (AsymmetricCipherKeyPair)pemReader.ReadObject();
+                var orgPrivateKey = keyPair.Private;
 
-            MessageBox.Show($"Brojanje glasova za '{election.Title}' će biti uskoro implementirano.\nOvdje će se koristiti Vaš privatni RSA ključ!", "Info", MessageBoxButton.OK, MessageBoxImage.Information);
+                var votes = _dbContext.GetVotesForElection(election.Id);
+                var results = election.Candidates.ToDictionary(c => c.Name, c => 0);
+                int validVotes = 0;
+
+                foreach (var vote in votes)
+                {
+                    try
+                    {
+                        byte[] aesKey = CryptoHelper.DecryptAesKeyWithRsa(vote.EncryptedSessionKey, orgPrivateKey);
+                        string candidateName = CryptoHelper.DecryptVoteDataWithAes(vote.EncryptedData, aesKey);
+
+                        if (results.ContainsKey(candidateName))
+                        {
+                            results[candidateName]++;
+                            validVotes++;
+                        }
+                    }
+                    catch { }
+                }
+
+                string reportData = $"IZVJEŠTAJ O GLASANJU\nGlasanje: {election.Title}\nDatum kreiranja izvještaja: {DateTime.Now}\n\n";
+                foreach (var res in results)
+                {
+                    reportData += $"{res.Key}: {res.Value} glasova\n";
+                }
+                reportData += $"\nUkupno validnih glasova: {validVotes}";
+
+                string reportSignature = CryptoHelper.SignReport(reportData, orgPrivateKey);
+                string finalReport = reportData + "\n\n--- DIGITALNI POTPIS ORGANIZATORA ---\n" + reportSignature;
+
+                string reportPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"Izvjestaj_Glasanja_{election.Id}.txt");
+                File.WriteAllText(reportPath, finalReport);
+
+                MessageBox.Show($"Rezultati uspješno izbrojani!\n\nIzvještaj je sačuvan na:\n{reportPath}\n\nPotpisan je Vašim digitalnim potpisom.", "Prebrojavanje Zvršeno", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Greška prilikom brojanja glasova: {ex.Message}", "Greška", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
     }
 }
