@@ -159,9 +159,34 @@ namespace EVotingSystem.Services.Cryptography
 
         private void InitializeCrl(string caPath, string keyName, string certName, string crlOutput)
         {
-            if (!File.Exists(crlOutput))
+            if (!File.Exists(crlOutput) || new FileInfo(crlOutput).Length == 0)
             {
-                File.WriteAllText(crlOutput, "");
+                X509Certificate caCert = ReadCertificate(Path.Combine(caPath, certName));
+                AsymmetricKeyParameter caPrivKey = ReadPrivateKey(Path.Combine(caPath, keyName));
+
+                var crlGen = new X509V2CrlGenerator();
+                crlGen.SetIssuerDN(caCert.SubjectDN);
+                crlGen.SetThisUpdate(DateTime.UtcNow);
+                crlGen.SetNextUpdate(DateTime.UtcNow.AddYears(1));
+
+                var random = new SecureRandom();
+                var signatureFactory = new Asn1SignatureFactory("SHA256WithRSA", caPrivKey, random);
+                X509Crl crl = crlGen.Generate(signatureFactory);
+
+                using (var stream = new FileStream(crlOutput, FileMode.Create, FileAccess.Write))
+                {
+                    byte[] crlBytes = crl.GetEncoded();
+                    stream.Write(crlBytes, 0, crlBytes.Length);
+                }
+            }
+        }
+
+        private X509Crl ReadCrl(string path)
+        {
+            using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read))
+            {
+                var parser = new X509CrlParser();
+                return parser.ReadCrl(stream);
             }
         }
 
@@ -298,6 +323,19 @@ namespace EVotingSystem.Services.Cryptography
                     return false;
                 }
 
+                bool isOrganizer = cert.IssuerDN.ToString().Contains("Organization CA");
+                string crlPath = Path.Combine(_crlPath, isOrganizer ? "org.crl" : "voter.crl");
+
+                if (File.Exists(crlPath))
+                {
+                    X509Crl crl = ReadCrl(crlPath);
+                    if (crl.IsRevoked(cert))
+                    {
+                        errorMessage = "Vaš sertifikat je POVUČEN i više nije važeći!";
+                        return false;
+                    }
+                }
+
                 serialNumberHex = cert.SerialNumber.ToString(16);
                 return true;
             }
@@ -310,6 +348,51 @@ namespace EVotingSystem.Services.Cryptography
 
         public void RevokeCertificate(string serialNumberHex, bool isOrganizer)
         {
+            string caDir = isOrganizer ? _orgCaPath : _voterCaPath;
+            string prefix = isOrganizer ? "org" : "voter";
+            string crlPath = Path.Combine(_crlPath, $"{prefix}.crl");
+
+            X509Certificate caCert = ReadCertificate(Path.Combine(caDir, $"{prefix}.crt"));
+            AsymmetricKeyParameter caPrivateKey = ReadPrivateKey(Path.Combine(caDir, $"{prefix}.key"));
+
+            BigInteger serialNumberToRevoke = new BigInteger(serialNumberHex, 16);
+
+            var crlGen = new X509V2CrlGenerator();
+            crlGen.SetIssuerDN(caCert.SubjectDN);
+            crlGen.SetThisUpdate(DateTime.UtcNow);
+            crlGen.SetNextUpdate(DateTime.UtcNow.AddMonths(1));
+
+            crlGen.AddCrlEntry(serialNumberToRevoke, DateTime.UtcNow, CrlReason.PrivilegeWithdrawn);
+
+            if (File.Exists(crlPath))
+            {
+                try
+                {
+                    X509Crl existingCrl = ReadCrl(crlPath);
+                    var revokedCerts = existingCrl.GetRevokedCertificates();
+                    if (revokedCerts != null)
+                    {
+                        foreach (X509CrlEntry entry in revokedCerts)
+                        {
+                            if (!entry.SerialNumber.Equals(serialNumberToRevoke))
+                            {
+                                crlGen.AddCrlEntry(entry.SerialNumber, entry.RevocationDate, 0);
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            var random = new SecureRandom();
+            var signatureFactory = new Asn1SignatureFactory("SHA256WithRSA", caPrivateKey, random);
+            X509Crl newCrl = crlGen.Generate(signatureFactory);
+
+            using (var stream = new FileStream(crlPath, FileMode.Create, FileAccess.Write))
+            {
+                byte[] crlBytes = newCrl.GetEncoded();
+                stream.Write(crlBytes, 0, crlBytes.Length);
+            }
         }
     }
 }
