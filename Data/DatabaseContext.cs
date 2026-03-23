@@ -28,43 +28,50 @@ namespace EVotingSystem.Data
                     conn.Open();
 
                     string sql = @"
-                        CREATE TABLE Users (
-                            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            Username TEXT UNIQUE,
-                            PasswordHash TEXT,
-                            Role TEXT,
-                            CertificateSerialNumber TEXT,
-                            IsRevoked INTEGER,
-                            FailedLoginAttempts INTEGER,
-                            OrganizationName TEXT,
-                            OrgIdNumber TEXT,
-                            FirstName TEXT,
-                            LastName TEXT,
-                            JMBG TEXT
-                        );
+                                CREATE TABLE Users (
+                                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    Username TEXT UNIQUE,
+                                    PasswordHash TEXT,
+                                    Role TEXT,
+                                    CertificateSerialNumber TEXT,
+                                    IsRevoked INTEGER,
+                                    FailedLoginAttempts INTEGER,
+                                    OrganizationName TEXT,
+                                    OrgIdNumber TEXT,
+                                    FirstName TEXT,
+                                    LastName TEXT,
+                                    JMBG TEXT
+                                );
 
-                        CREATE TABLE Elections (
-                            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            Title TEXT,
-                            Description TEXT,
-                            StartDate TEXT,
-                            EndDate TEXT,
-                            OrganizerId INTEGER,
-                            CandidatesJson TEXT,
-                            Hmac TEXT
-                        );
+                                CREATE TABLE Elections (
+                                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    Title TEXT,
+                                    Description TEXT,
+                                    StartDate TEXT,
+                                    EndDate TEXT,
+                                    OrganizerId INTEGER,
+                                    CandidatesJson TEXT,
+                                    Hmac TEXT
+                                );
 
-                        CREATE TABLE Votes (
-                            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            ElectionId INTEGER,
-                            VoterId INTEGER,
-                            EncryptedData TEXT,
-                            EncryptedSessionKey TEXT,
-                            DigitalSignature TEXT,
-                            Timestamp TEXT,
-                            UNIQUE(ElectionId, VoterId)
-                        );
-                    ";
+                                CREATE TABLE Votes (
+                                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    ElectionId INTEGER,
+                                    EncryptedData TEXT,
+                                    EncryptedSessionKey TEXT,
+                                    ReceiptHash TEXT,
+                                    BallotHmac TEXT,
+                                    Timestamp TEXT
+                                );
+
+                                CREATE TABLE VotingParticipations (
+                                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    ElectionId INTEGER,
+                                    VoterId INTEGER,
+                                    Timestamp TEXT,
+                                    UNIQUE(ElectionId, VoterId)
+                                );
+                            ";
 
                     using (var command = new SQLiteCommand(sql, conn))
                     {
@@ -156,6 +163,7 @@ namespace EVotingSystem.Data
             }
             return null;
         }
+        
         public void UpdateUser(User user)
         {
             using (var conn = GetConnection())
@@ -298,38 +306,15 @@ namespace EVotingSystem.Data
 
         public bool HasUserVoted(int electionId, int voterId)
         {
-            using (var conn = GetConnection())
-            {
-                conn.Open();
-                string sql = "SELECT COUNT(*) FROM Votes WHERE ElectionId = @eId AND VoterId = @vId";
-                using (var cmd = new SQLiteCommand(sql, conn))
-                {
-                    cmd.Parameters.AddWithValue("@eId", electionId);
-                    cmd.Parameters.AddWithValue("@vId", voterId);
-                    return (long)cmd.ExecuteScalar() > 0;
-                }
-            }
-        }
+            using var conn = GetConnection();
+            conn.Open();
 
-        public void AddVote(Vote vote)
-        {
-            using (var conn = GetConnection())
-            {
-                conn.Open();
-                string sql = @"
-                    INSERT INTO Votes (ElectionId, VoterId, EncryptedData, EncryptedSessionKey, DigitalSignature, Timestamp)
-                    VALUES (@eId, @vId, @encData, @encKey, @sig, @time)";
-                using (var cmd = new SQLiteCommand(sql, conn))
-                {
-                    cmd.Parameters.AddWithValue("@eId", vote.ElectionId);
-                    cmd.Parameters.AddWithValue("@vId", vote.VoterId);
-                    cmd.Parameters.AddWithValue("@encData", vote.EncryptedData);
-                    cmd.Parameters.AddWithValue("@encKey", vote.EncryptedSessionKey);
-                    cmd.Parameters.AddWithValue("@sig", vote.DigitalSignature);
-                    cmd.Parameters.AddWithValue("@time", vote.Timestamp.ToString("o"));
-                    cmd.ExecuteNonQuery();
-                }
-            }
+            string sql = "SELECT COUNT(*) FROM VotingParticipations WHERE ElectionId = @eId AND VoterId = @vId";
+            using var cmd = new SQLiteCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@eId", electionId);
+            cmd.Parameters.AddWithValue("@vId", voterId);
+
+            return (long)cmd.ExecuteScalar() > 0;
         }
 
         public string GetUserCertificateSerialNumber(int userId)
@@ -349,58 +334,117 @@ namespace EVotingSystem.Data
         public List<Vote> GetVotesForElection(int electionId)
         {
             var votes = new List<Vote>();
-            using (var conn = GetConnection())
+
+            using var conn = GetConnection();
+            conn.Open();
+
+            string sql = "SELECT * FROM Votes WHERE ElectionId = @eId";
+            using var cmd = new SQLiteCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@eId", electionId);
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
             {
-                conn.Open();
-                string sql = "SELECT * FROM Votes WHERE ElectionId = @eId";
-                using (var cmd = new SQLiteCommand(sql, conn))
+                votes.Add(new Vote
                 {
-                    cmd.Parameters.AddWithValue("@eId", electionId);
-                    using (var reader = cmd.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            votes.Add(new Vote
-                            {
-                                Id = Convert.ToInt32(reader["Id"]),
-                                ElectionId = Convert.ToInt32(reader["ElectionId"]),
-                                VoterId = Convert.ToInt32(reader["VoterId"]),
-                                EncryptedData = reader["EncryptedData"].ToString() ?? "",
-                                EncryptedSessionKey = reader["EncryptedSessionKey"].ToString() ?? "",
-                                DigitalSignature = reader["DigitalSignature"].ToString() ?? "",
-                                Timestamp = DateTime.Parse(reader["Timestamp"].ToString() ?? DateTime.UtcNow.ToString())
-                            });
-                        }
-                    }
-                }
+                    Id = Convert.ToInt32(reader["Id"]),
+                    ElectionId = Convert.ToInt32(reader["ElectionId"]),
+                    EncryptedData = reader["EncryptedData"].ToString() ?? "",
+                    EncryptedSessionKey = reader["EncryptedSessionKey"].ToString() ?? "",
+                    ReceiptHash = reader["ReceiptHash"].ToString() ?? "",
+                    BallotHmac = reader["BallotHmac"].ToString() ?? "",
+                    Timestamp = DateTime.ParseExact(
+                                    reader["Timestamp"].ToString()!,
+                                    "o",
+                                    System.Globalization.CultureInfo.InvariantCulture,
+                                    System.Globalization.DateTimeStyles.RoundtripKind
+                                )
+                });
             }
+
             return votes;
         }
 
-        public string VerifyVote(string receiptSignature)
+        public string VerifyVote(string receiptInput)
         {
-            using (var conn = GetConnection())
-            {
-                conn.Open();
-                string sql = @"
-                    SELECT e.Title, v.Timestamp 
-                    FROM Votes v 
-                    JOIN Elections e ON v.ElectionId = e.Id 
-                    WHERE v.DigitalSignature LIKE @sig";
+            string receiptHash = CryptoHelper.GetSha256Hash(receiptInput);
 
-                using (var cmd = new SQLiteCommand(sql, conn))
-                {
-                    cmd.Parameters.AddWithValue("@sig", receiptSignature + "%");
-                    using (var reader = cmd.ExecuteReader())
-                    {
-                        if (reader.Read())
-                        {
-                            return $"Pronađeno!\nVaš glas za glasanje '{reader["Title"]}' je bezbjedno zabilježen u bazi dana {reader["Timestamp"]}.\nSadržaj glasa je kriptografski zaštićen.";
-                        }
-                    }
-                }
+            using var conn = GetConnection();
+            conn.Open();
+
+            string sql = @"
+                        SELECT e.Title, v.Timestamp
+                        FROM Votes v
+                        JOIN Elections e ON v.ElectionId = e.Id
+                        WHERE v.ReceiptHash = @receiptHash";
+
+            using var cmd = new SQLiteCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@receiptHash", receiptHash);
+
+            using var reader = cmd.ExecuteReader();
+            if (reader.Read())
+            {
+                return $"Pronađeno!\nVaš glas za glasanje '{reader["Title"]}' je bezbjedno zabilježen dana {reader["Timestamp"]}.";
             }
+
             return null;
+        }
+
+        public string GetUsernameById(int userId)
+        {
+            using var conn = GetConnection();
+            conn.Open();
+
+            string sql = "SELECT Username FROM Users WHERE Id = @id";
+            using var cmd = new SQLiteCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@id", userId);
+
+            return cmd.ExecuteScalar()?.ToString() ?? string.Empty;
+        }
+
+        public void AddVoteAndParticipation(Vote vote, VotingParticipation participation)
+        {
+            using var conn = GetConnection();
+            conn.Open();
+
+            using var tx = conn.BeginTransaction();
+
+            try
+            {
+                string insertParticipation = @"
+                                            INSERT INTO VotingParticipations (ElectionId, VoterId, Timestamp)
+                                            VALUES (@eId, @vId, @time)";
+
+                using (var cmd = new SQLiteCommand(insertParticipation, conn, tx))
+                {
+                    cmd.Parameters.AddWithValue("@eId", participation.ElectionId);
+                    cmd.Parameters.AddWithValue("@vId", participation.VoterId);
+                    cmd.Parameters.AddWithValue("@time", participation.Timestamp.ToString("o"));
+                    cmd.ExecuteNonQuery();
+                }
+
+                string insertVote = @"
+                                    INSERT INTO Votes (ElectionId, EncryptedData, EncryptedSessionKey, ReceiptHash, BallotHmac, Timestamp)
+                                    VALUES (@eId, @encData, @encKey, @receiptHash, @ballotHmac, @time)";
+
+                using (var cmd = new SQLiteCommand(insertVote, conn, tx))
+                {
+                    cmd.Parameters.AddWithValue("@eId", vote.ElectionId);
+                    cmd.Parameters.AddWithValue("@encData", vote.EncryptedData);
+                    cmd.Parameters.AddWithValue("@encKey", vote.EncryptedSessionKey);
+                    cmd.Parameters.AddWithValue("@receiptHash", vote.ReceiptHash);
+                    cmd.Parameters.AddWithValue("@ballotHmac", vote.BallotHmac);
+                    cmd.Parameters.AddWithValue("@time", vote.Timestamp.ToString("o"));
+                    cmd.ExecuteNonQuery();
+                }
+
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
         }
     }
 }

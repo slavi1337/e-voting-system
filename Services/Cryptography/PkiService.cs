@@ -1,4 +1,5 @@
-﻿using Org.BouncyCastle.Asn1.X509;
+﻿using Org.BouncyCastle.Asn1.Pkcs;
+using Org.BouncyCastle.Asn1.X509;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Generators;
 using Org.BouncyCastle.Crypto.Operators;
@@ -20,10 +21,10 @@ namespace EVotingSystem.Services.Cryptography
         private readonly string _orgCaPath;
         private readonly string _voterCaPath;
         private readonly string _crlPath;
+        private const string CaMasterPassword = "Sifra_Za_Zastitu_CA_Kljuca_2026!";
 
         public PkiService()
         {
-            // bin/Debug/net8.0/PKI_ROOT
             _pkiPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PKI_ROOT");
             _rootPath = Path.Combine(_pkiPath, "RootCA");
             _orgCaPath = Path.Combine(_pkiPath, "OrgCA");
@@ -49,13 +50,13 @@ namespace EVotingSystem.Services.Cryptography
                 SaveCertificate(rootCert, _rootPath, "root.crt");
                 SavePrivateKey(rootKeys.Private, _rootPath, "root.key");
 
-                // Org CA (Potpisuje ga Root)
+                // Org CA
                 var orgKeys = GenerateKeyPair(2048);
                 var orgCert = GenerateIntermediateCertificate(orgKeys.Public, rootKeys.Private, rootCert, "CN=EVoting Organization CA, O=EVoting, C=BA");
                 SaveCertificate(orgCert, _orgCaPath, "org.crt");
                 SavePrivateKey(orgKeys.Private, _orgCaPath, "org.key");
 
-                // Voter CA (Potpisuje ga Root)
+                // Voter CA
                 var voterKeys = GenerateKeyPair(2048);
                 var voterCert = GenerateIntermediateCertificate(voterKeys.Public, rootKeys.Private, rootCert, "CN=EVoting Voter CA, O=EVoting, C=BA");
                 SaveCertificate(voterCert, _voterCaPath, "voter.crt");
@@ -67,7 +68,6 @@ namespace EVotingSystem.Services.Cryptography
             }
         }
 
-        // GENERISANJE KLJUCEVA
         public AsymmetricCipherKeyPair GenerateKeyPair(int strength)
         {
             var randomGenerator = new CryptoApiRandomGenerator();
@@ -148,12 +148,15 @@ namespace EVotingSystem.Services.Cryptography
         private void SavePrivateKey(AsymmetricKeyParameter key, string path, string filename)
         {
             var filePath = Path.Combine(path, filename);
+
+            // kljuc u PKCS#8 formatu
+            PrivateKeyInfo privKeyInfo = PrivateKeyInfoFactory.CreatePrivateKeyInfo(key);
+            byte[] keyBytes = privKeyInfo.GetEncoded();
+
             using (var writer = new StreamWriter(filePath))
             {
-                // U praksi ključ treba biti enkriptovan passwordom, 
-                // ovdje čuvamo kao PEM radi jednostavnosti simulacije serverske strane.
-                var pemWriter = new PemWriter(writer);
-                pemWriter.WriteObject(key);
+                var pemWriter = new Org.BouncyCastle.OpenSsl.PemWriter(writer);
+                pemWriter.WriteObject(key, "AES-256-CBC", CaMasterPassword.ToCharArray(), new SecureRandom());
             }
         }
 
@@ -190,17 +193,19 @@ namespace EVotingSystem.Services.Cryptography
             }
         }
 
-        public string RegisterUserCertificate(string username, string password, string commonName, bool isOrganizer, out string serialNumberHex)
+        public string RegisterUserCertificate(string username, string password, string commonName, bool isOrganizer, string idNumber, out string serialNumberHex)
         {
-            // issuer
+            // Issuer (OrgCA ili VoterCA)
             string issuerDir = isOrganizer ? _orgCaPath : _voterCaPath;
             string issuerPrefix = isOrganizer ? "org" : "voter";
 
             X509Certificate issuerCert = ReadCertificate(Path.Combine(issuerDir, $"{issuerPrefix}.crt"));
             AsymmetricKeyParameter issuerPrivKey = ReadPrivateKey(Path.Combine(issuerDir, $"{issuerPrefix}.key"));
 
+            // RSA ključevi za korisnika
             var userKeys = GenerateKeyPair(2048);
 
+            // Parametri sertifikata
             var random = new SecureRandom();
             var certGen = new X509V3CertificateGenerator();
 
@@ -209,13 +214,15 @@ namespace EVotingSystem.Services.Cryptography
             certGen.SetSerialNumber(serialNumber);
 
             certGen.SetIssuerDN(issuerCert.SubjectDN);
-            certGen.SetSubjectDN(new X509Name($"CN={commonName}, UID={username}, C=BA"));
+
+            string dn = $"CN={commonName}, UID={username}, SERIALNUMBER={idNumber}, C=BA";
+            certGen.SetSubjectDN(new X509Name(dn));
 
             certGen.SetNotBefore(DateTime.UtcNow.Date);
             certGen.SetNotAfter(DateTime.UtcNow.Date.AddYears(2));
-
             certGen.SetPublicKey(userKeys.Public);
 
+            // Ekstenzije
             certGen.AddExtension(X509Extensions.BasicConstraints, true, new BasicConstraints(false));
             certGen.AddExtension(X509Extensions.KeyUsage, true, new KeyUsage(KeyUsage.DigitalSignature | KeyUsage.KeyEncipherment | KeyUsage.NonRepudiation));
 
@@ -223,15 +230,15 @@ namespace EVotingSystem.Services.Cryptography
             certGen.AddExtension(X509Extensions.AuthorityKeyIdentifier, false, new AuthorityKeyIdentifierStructure(issuerCert));
 #pragma warning restore CS0618
 
-            // Potpisivanje
+            // Potpisivanje sertifikata CA ključem
             var signatureFactory = new Asn1SignatureFactory("SHA256WithRSA", issuerPrivKey, random);
             var userCert = certGen.Generate(signatureFactory);
 
+            // Kreiranje PKCS#12 (.p12) kontejnera
             var builder = new Pkcs12StoreBuilder();
             var store = builder.Build();
 
             X509Certificate rootCert = ReadCertificate(Path.Combine(_rootPath, "root.crt"));
-
             var certEntry = new X509CertificateEntry(userCert);
             var chain = new[] { certEntry, new X509CertificateEntry(issuerCert), new X509CertificateEntry(rootCert) };
 
@@ -241,16 +248,24 @@ namespace EVotingSystem.Services.Cryptography
             if (!Directory.Exists(userCertsDir))
                 Directory.CreateDirectory(userCertsDir);
 
+            // Save .p12 (Sadrži PRIV KLJUČ - zaštićeno lozinkom)
             string p12Path = Path.Combine(userCertsDir, $"{username}.p12");
-
             using (var stream = new FileStream(p12Path, FileMode.Create, FileAccess.Write))
             {
                 store.Save(stream, password.ToCharArray(), random);
             }
 
+            // Snimanje .crt (PUB SERTIFIKAT - PEM format)
+            // Ovo omogućava organizatoru da dešifruje glas bez traženja lozinke od glasača!
+            string crtPath = Path.Combine(userCertsDir, $"{username}.crt");
+            using (var writer = new StreamWriter(crtPath))
+            {
+                var pemWriter = new PemWriter(writer);
+                pemWriter.WriteObject(userCert);
+            }
+
             return p12Path;
         }
-
         private X509Certificate ReadCertificate(string path)
         {
             using (var reader = File.OpenText(path))
@@ -264,13 +279,12 @@ namespace EVotingSystem.Services.Cryptography
         {
             using (var reader = File.OpenText(path))
             {
-                var pemReader = new PemReader(reader);
-                var keyObj = pemReader.ReadObject();
+                var pemReader = new Org.BouncyCastle.OpenSsl.PemReader(reader, new PasswordGetter(CaMasterPassword));
+                var obj = pemReader.ReadObject();
 
-                if (keyObj is AsymmetricCipherKeyPair pair)
+                if (obj is AsymmetricCipherKeyPair pair)
                     return pair.Private;
-
-                return (AsymmetricKeyParameter)keyObj;
+                return (AsymmetricKeyParameter)obj;
             }
         }
 
@@ -305,33 +319,37 @@ namespace EVotingSystem.Services.Cryptography
                     return false;
                 }
 
-                var certEntry = store.GetCertificate(alias);
-                var cert = certEntry.Certificate;
+                var cert = store.GetCertificate(alias).Certificate;
 
-                try
+                cert.CheckValidity(DateTime.UtcNow);
+
+                bool isOrganizerCert = cert.IssuerDN.ToString().Contains("Organization CA");
+                string caDir = isOrganizerCert ? _orgCaPath : _voterCaPath;
+                string caPrefix = isOrganizerCert ? "org" : "voter";
+
+                X509Certificate issuerCaCert = ReadCertificate(Path.Combine(caDir, $"{caPrefix}.crt"));
+                X509Certificate rootCert = ReadCertificate(Path.Combine(_rootPath, "root.crt"));
+
+                // leaf -> CA
+                cert.Verify(issuerCaCert.GetPublicKey());
+
+                // CA -> Root
+                issuerCaCert.Verify(rootCert.GetPublicKey());
+
+                // Osnovna provjera CA uloge
+                if (issuerCaCert.GetBasicConstraints() < 0)
                 {
-                    cert.CheckValidity(DateTime.UtcNow);
-                }
-                catch (Org.BouncyCastle.Security.Certificates.CertificateExpiredException)
-                {
-                    errorMessage = "Ovaj sertifikat je istekao.";
+                    errorMessage = "Izdavač nije validno CA tijelo.";
                     return false;
                 }
-                catch (Org.BouncyCastle.Security.Certificates.CertificateNotYetValidException)
-                {
-                    errorMessage = "Ovaj sertifikat još uvijek nije validan.";
-                    return false;
-                }
 
-                bool isOrganizer = cert.IssuerDN.ToString().Contains("Organization CA");
-                string crlPath = Path.Combine(_crlPath, isOrganizer ? "org.crl" : "voter.crl");
-
+                string crlPath = Path.Combine(_crlPath, isOrganizerCert ? "org.crl" : "voter.crl");
                 if (File.Exists(crlPath))
                 {
                     X509Crl crl = ReadCrl(crlPath);
                     if (crl.IsRevoked(cert))
                     {
-                        errorMessage = "Vaš sertifikat je POVUČEN i više nije važeći!";
+                        errorMessage = "Vaš sertifikat je povučen i više nije važeći.";
                         return false;
                     }
                 }
@@ -339,13 +357,22 @@ namespace EVotingSystem.Services.Cryptography
                 serialNumberHex = cert.SerialNumber.ToString(16);
                 return true;
             }
-            catch (Exception)
+            catch (Org.BouncyCastle.Security.Certificates.CertificateExpiredException)
             {
-                errorMessage = "Neispravna lozinka ili oštećen .p12 fajl.";
+                errorMessage = "Ovaj sertifikat je istekao.";
+                return false;
+            }
+            catch (Org.BouncyCastle.Security.Certificates.CertificateNotYetValidException)
+            {
+                errorMessage = "Ovaj sertifikat još nije validan.";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = $"Neispravan sertifikat ili lozinka: {ex.Message}";
                 return false;
             }
         }
-
         public void RevokeCertificate(string serialNumberHex, bool isOrganizer)
         {
             string caDir = isOrganizer ? _orgCaPath : _voterCaPath;
@@ -394,5 +421,19 @@ namespace EVotingSystem.Services.Cryptography
                 stream.Write(crlBytes, 0, crlBytes.Length);
             }
         }
+
+    }
+}
+
+public class PasswordGetter : Org.BouncyCastle.OpenSsl.IPasswordFinder
+{
+    private string pass;
+    public PasswordGetter(string p)
+    {
+        pass = p;
+    }
+    public char[] GetPassword()
+    {
+        return pass.ToCharArray();
     }
 }

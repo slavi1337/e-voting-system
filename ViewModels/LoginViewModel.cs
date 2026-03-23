@@ -117,8 +117,7 @@ namespace EVotingSystem.ViewModels
                 return;
             }
 
-            string hashedInput = CryptoHelper.ComputeSha256Hash(appPassword);
-            if (user.PasswordHash != hashedInput)
+            if (!CryptoHelper.VerifyPassword(appPassword, user.PasswordHash))
             {
                 user.FailedLoginAttempts++;
 
@@ -128,13 +127,20 @@ namespace EVotingSystem.ViewModels
                     _pkiService.RevokeCertificate(user.CertificateSerialNumber, user.Role == UserRole.Organizer);
                     _dbContext.UpdateUser(user);
 
-                    MessageBox.Show("Unijeli ste pogrešnu lozinku 3 puta. Vaš nalog je trajno blokiran, a sertifikat povučen!", "Sigurnosno blokiranje", MessageBoxButton.OK, MessageBoxImage.Stop);
+                    MessageBox.Show("Unijeli ste pogrešnu lozinku 3 puta. Vaš nalog je trajno blokiran, a sertifikat povučen!",
+                        "Sigurnosno blokiranje",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Stop);
                 }
                 else
                 {
                     _dbContext.UpdateUser(user);
-                    MessageBox.Show($"Pogrešna lozinka! Preostalo pokušaja: {3 - user.FailedLoginAttempts}", "Greška", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show($"Pogrešna lozinka! Preostalo pokušaja: {3 - user.FailedLoginAttempts}",
+                        "Greška",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
                 }
+
                 return;
             }
 

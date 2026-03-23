@@ -19,7 +19,6 @@ namespace EVotingSystem.ViewModels
         }
 
         [ObservableProperty] private string username = string.Empty;
-        [ObservableProperty] private string password = string.Empty;
 
         [ObservableProperty] private string firstName = string.Empty;
         [ObservableProperty] private string lastName = string.Empty;
@@ -46,9 +45,12 @@ namespace EVotingSystem.ViewModels
         }
 
         [RelayCommand]
-        public void Register()
+        public void Register(object parameter)
         {
-            if (string.IsNullOrWhiteSpace(Username) || string.IsNullOrWhiteSpace(Password))
+            if (parameter is not System.Windows.Controls.PasswordBox pb)
+                return;
+            string password = pb.Password;
+            if (string.IsNullOrWhiteSpace(Username) || string.IsNullOrWhiteSpace(password))
             {
                 MessageBox.Show("Korisničko ime i lozinka su obavezni!");
                 return;
@@ -66,18 +68,21 @@ namespace EVotingSystem.ViewModels
 
             try
             {
+                string idToLink = IsOrganizerSelected ? OrgIdNumber : Jmbg;
+
                 string p12Path = _pkiService.RegisterUserCertificate(
                     Username,
-                    Password,
+                    password,
                     commonName,
                     IsOrganizerSelected,
+                    idToLink,
                     out string serialNumber
                 );
 
                 var newUser = new User
                 {
                     Username = Username,
-                    PasswordHash = CryptoHelper.ComputeSha256Hash(Password),
+                    PasswordHash = CryptoHelper.HashPassword(password),
                     Role = IsOrganizerSelected ? UserRole.Organizer : UserRole.Voter,
                     CertificateSerialNumber = serialNumber,
 

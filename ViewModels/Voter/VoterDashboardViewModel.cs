@@ -54,7 +54,6 @@ namespace EVotingSystem.ViewModels.Voter
                 return;
 
             var selectedCandidate = selectedElection.Candidates.FirstOrDefault(c => c.IsSelected);
-
             if (selectedCandidate == null)
             {
                 MessageBox.Show("Molimo odaberite opciju za glasanje.", "Greška", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -72,33 +71,59 @@ namespace EVotingSystem.ViewModels.Voter
             {
                 string encryptedVoteData = CryptoHelper.EncryptVoteDataWithAes(selectedCandidate.Name, out byte[] aesKey);
 
-                var orgCaCertPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PKI_ROOT", "OrgCA", "org.crt");
-                var pemReader = new PemReader(File.OpenText(orgCaCertPath));
-                var orgPublicKey = ((X509Certificate)pemReader.ReadObject()).GetPublicKey();
+                string orgUsername = _dbContext.GetUsernameById(selectedElection.OrganizerId);
+                string orgCertPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PKI_ROOT", "UserCerts", $"{orgUsername}.crt");
+
+                using var orgReader = new PemReader(File.OpenText(orgCertPath));
+                var orgPublicKey = ((X509Certificate)orgReader.ReadObject()).GetPublicKey();
 
                 string encryptedSessionKey = CryptoHelper.EncryptAesKeyWithRsa(aesKey, orgPublicKey);
 
                 string signature = CryptoHelper.SignVote(encryptedVoteData, encryptedSessionKey, AppSession.CurrentUserPrivateKey);
 
+                string voterCertPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PKI_ROOT", "UserCerts", $"{CurrentUser.Username}.crt");
+                using var voterReader = new PemReader(File.OpenText(voterCertPath));
+                var voterPublicKey = ((X509Certificate)voterReader.ReadObject()).GetPublicKey();
+
+                if (!CryptoHelper.VerifyVoteSignature(encryptedVoteData, encryptedSessionKey, signature, voterPublicKey))
+                    throw new Exception("Digitalni potpis glasa nije validan.");
+
+                string receiptPlain = Guid.NewGuid().ToString("N")[..16].ToUpperInvariant();
+                string receiptHash = CryptoHelper.GetSha256Hash(receiptPlain);
+
+                DateTime now = DateTime.UtcNow;
+
                 var vote = new Vote
                 {
                     ElectionId = selectedElection.Id,
-                    VoterId = CurrentUser.Id,
                     EncryptedData = encryptedVoteData,
                     EncryptedSessionKey = encryptedSessionKey,
-                    DigitalSignature = signature,
-                    Timestamp = DateTime.UtcNow
+                    ReceiptHash = receiptHash,
+                    Timestamp = now
                 };
 
-                _dbContext.AddVote(vote);
+                vote.BallotHmac = CryptoHelper.CalculateBallotHmac(
+                    vote.ElectionId,
+                    vote.EncryptedData,
+                    vote.EncryptedSessionKey,
+                    vote.ReceiptHash,
+                    vote.Timestamp
+                );
 
-                string receipt = signature.Length > 40 ? signature.Substring(0, 40) : signature;
+                var participation = new VotingParticipation
+                {
+                    ElectionId = selectedElection.Id,
+                    VoterId = CurrentUser.Id,
+                    Timestamp = now
+                };
+
+                _dbContext.AddVoteAndParticipation(vote, participation);
 
                 MessageBox.Show(
-                    $"Vaš glas je uspješno zabilježen, enkriptovan i digitalno potpisan!\n\n" +
-                    $"Vaš jedinstveni kod za verifikaciju (Receipt) je:\n\n{receipt}\n\n" +
-                    $"Obavezno kopirajte i sačuvajte ovaj kod! Pomoću njega možete potvrditi da je vaš glas u bazi, bez otkrivanja za koga ste glasali.",
-                    "Glasanje Uspješno",
+                    $"Vaš glas je uspješno zabilježen!\n\n" +
+                    $"Vaš receipt kod je:\n{receiptPlain}\n\n" +
+                    $"Sačuvajte ovaj kod. Pomoću njega možete kasnije potvrditi da je glas upisan.",
+                    "Glasanje uspješno",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
 
@@ -106,7 +131,7 @@ namespace EVotingSystem.ViewModels.Voter
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Došlo je do greške prilikom glasanja: {ex.Message}", "Kritična Greška", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Došlo je do greške prilikom glasanja: {ex.Message}", "Kritična greška", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -120,7 +145,6 @@ namespace EVotingSystem.ViewModels.Voter
             }
 
             string verificationResult = _dbContext.VerifyVote(ReceiptInput);
-
             if (verificationResult != null)
             {
                 MessageBox.Show(verificationResult, "Uspješna verifikacija", MessageBoxButton.OK, MessageBoxImage.Information);

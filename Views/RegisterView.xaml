@@ -64,12 +64,12 @@
                     Style="{StaticResource MaterialDesignFloatingHintTextBox}"
                     Text="{Binding Username}" />
 
-                <TextBox
+                <PasswordBox
+                    x:Name="RegPasswordBox"
                     Margin="0,0,0,20"
                     materialDesign:HintAssist.Hint="Lozinka (za nalog i sertifikat)"
                     FontSize="16"
-                    Style="{StaticResource MaterialDesignFloatingHintTextBox}"
-                    Text="{Binding Password}" />
+                    Style="{StaticResource MaterialDesignFloatingHintPasswordBox}" />
 
                 <StackPanel Visibility="{Binding IsVoterSelected, Converter={StaticResource BoolToVis}}">
                     <TextBox
@@ -111,6 +111,7 @@
                     Height="45"
                     Margin="0,20,0,0"
                     Command="{Binding RegisterCommand}"
+                    CommandParameter="{Binding ElementName=RegPasswordBox}"
                     Content="REGISTRUJ SE"
                     FontSize="16"
                     Style="{StaticResource MaterialDesignRaisedButton}" />

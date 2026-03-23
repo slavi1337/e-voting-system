@@ -3,10 +3,9 @@ using CommunityToolkit.Mvvm.Input;
 using EVotingSystem.Data;
 using EVotingSystem.Models;
 using EVotingSystem.Services.Cryptography;
-using Org.BouncyCastle.Crypto;
-using Org.BouncyCastle.OpenSsl;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Security.Cryptography;
 using System.Windows;
 
 namespace EVotingSystem.ViewModels.Organizer
@@ -108,19 +107,35 @@ namespace EVotingSystem.ViewModels.Organizer
 
             try
             {
-                var orgKeyPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PKI_ROOT", "OrgCA", "org.key");
-                var pemReader = new PemReader(File.OpenText(orgKeyPath));
-                var keyPair = (AsymmetricCipherKeyPair)pemReader.ReadObject();
-                var orgPrivateKey = keyPair.Private;
+                var orgPrivateKey = AppSession.CurrentUserPrivateKey;
+                if (orgPrivateKey == null)
+                    throw new Exception("Privatni ključ organizatora nije učitan.");
 
                 var votes = _dbContext.GetVotesForElection(election.Id);
                 var results = election.Candidates.ToDictionary(c => c.Name, c => 0);
                 int validVotes = 0;
+                int rejectedVotes = 0;
 
                 foreach (var vote in votes)
                 {
                     try
                     {
+                        string expectedBallotHmac = CryptoHelper.CalculateBallotHmac(
+                            vote.ElectionId,
+                            vote.EncryptedData,
+                            vote.EncryptedSessionKey,
+                            vote.ReceiptHash,
+                            vote.Timestamp
+                        );
+
+                        if (!CryptographicOperations.FixedTimeEquals(
+                                Convert.FromBase64String(expectedBallotHmac),
+                                Convert.FromBase64String(vote.BallotHmac)))
+                        {
+                            rejectedVotes++;
+                            continue;
+                        }
+
                         byte[] aesKey = CryptoHelper.DecryptAesKeyWithRsa(vote.EncryptedSessionKey, orgPrivateKey);
                         string candidateName = CryptoHelper.DecryptVoteDataWithAes(vote.EncryptedData, aesKey);
 
@@ -129,16 +144,26 @@ namespace EVotingSystem.ViewModels.Organizer
                             results[candidateName]++;
                             validVotes++;
                         }
+                        else
+                        {
+                            rejectedVotes++;
+                        }
                     }
-                    catch { }
+                    catch
+                    {
+                        rejectedVotes++;
+                    }
                 }
 
-                string reportData = $"IZVJEŠTAJ O GLASANJU\nGlasanje: {election.Title}\nDatum kreiranja izvještaja: {DateTime.Now}\n\n";
+                string reportData = $"IZVJEŠTAJ O GLASANJU\n" +
+                                    $"Glasanje: {election.Title}\n" +
+                                    $"Datum kreiranja izvještaja: {DateTime.Now}\n\n";
+
                 foreach (var res in results)
-                {
                     reportData += $"{res.Key}: {res.Value} glasova\n";
-                }
+
                 reportData += $"\nUkupno validnih glasova: {validVotes}";
+                reportData += $"\nOdbačenih glasova: {rejectedVotes}";
 
                 string reportSignature = CryptoHelper.SignReport(reportData, orgPrivateKey);
                 string finalReport = reportData + "\n\n--- DIGITALNI POTPIS ORGANIZATORA ---\n" + reportSignature;
@@ -146,7 +171,11 @@ namespace EVotingSystem.ViewModels.Organizer
                 string reportPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"Izvjestaj_Glasanja_{election.Id}.txt");
                 File.WriteAllText(reportPath, finalReport);
 
-                MessageBox.Show($"Rezultati uspješno izbrojani!\n\nIzvještaj je sačuvan na:\n{reportPath}\n\nPotpisan je Vašim digitalnim potpisom.", "Prebrojavanje Zvršeno", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(
+                    $"Rezultati uspješno izbrojani!\n\nIzvještaj je sačuvan na:\n{reportPath}",
+                    "Prebrojavanje završeno",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
