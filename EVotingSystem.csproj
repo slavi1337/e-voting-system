@@ -18,10 +18,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Stores\" />
-  </ItemGroup>
-
-  <ItemGroup>
     <Compile Update="ViewModels\Voter\VoterDashboardViewModel.cs">
       <Generator>MSBuild:Compile</Generator>
     </Compile>
